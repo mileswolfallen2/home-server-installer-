@@ -60,14 +60,14 @@ chmod +x install.sh       # Make the installer executable
 #### What these commands do:
 - `chmod +x install.sh` — allows the script to run.
 - `./install.sh` — steps through the entire install: 
-    1 . Updates your system packages (`apt update/upgrade`)
-    2 . Installs Docker and Docker Compose (via official scripts)
-    3 . Adds your user to the Docker group (no sudo needed for docker)
-    4 . Creates all app data folders under `/pi-data`
-    5 . Auto-generates Nginx config for reverse proxy routing
-    6 . Generates a complete `docker-compose.yml` with all defined services and persistent data mapping 
-    7 . Starts up all services via Docker Compose
-    8 . Prints all access URLs and caveats
+    1. Updates your system packages (`apt update/upgrade`)
+    2. Installs Docker and Docker Compose (via official scripts)
+    3. Adds your user to the Docker group (no sudo needed for docker)
+    4. Creates all app data folders under `/pi-data`
+    5. Auto-generates Nginx config for reverse proxy routing
+    6. Generates a complete `docker-compose.yml` with all defined services and persistent data mapping 
+    7. Starts up all services via Docker Compose
+    8. Prints all access URLs and caveats
 
 ### 3. **Post-Install Instructions**
 
