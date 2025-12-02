@@ -1,12 +1,72 @@
 #!/bin/bash
 
+set -e
+
+# --- Helper Functions ---
+function uninstall_openson() {
+    echo
+    echo "=== Uninstalling OpenSon stack and related Docker resources ==="
+    read -p "Are you sure you want to uninstall all services and Docker (Y/N)? " confirm
+    if [[ "${confirm^^}" != "Y" ]]; then
+        echo "Uninstall cancelled."
+        exit 0
+    fi
+
+    echo "-- Stopping and removing containers/services via docker-compose..."
+    if [ -f "docker-compose.yml" ]; then
+        # Use sudo to ensure permissions are not an issue during clean up
+        sudo docker compose down --volumes --remove-orphans || true
+        echo "-- Removing docker-compose.yml file..."
+        rm -f docker-compose.yml
+    fi
+
+    DATA_ROOT="/pi-data"
+    echo "-- Deleting persistent data directories under ${DATA_ROOT}..."
+    sudo rm -rf "${DATA_ROOT}"
+
+    echo "-- Uninstalling Docker and Docker Compose..."
+    # '|| true' handles if these packages weren't installed via apt/are already gone
+    sudo apt-get remove --purge -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || true
+    sudo apt-get autoremove -y
+    sudo apt-get autoclean
+
+    echo "-- Removing user from docker group..."
+    sudo gpasswd -d "$USER" docker || true
+
+    echo "-- Uninstallation complete! All OpenSon services, Docker, and data removed."
+    echo "If you installed other Docker apps, you may need to clean those up manually."
+    exit 0
+}
+
+# --- Main Menu ---
+echo
+echo "==============================================="
+echo "  Pi Home Server Installer with OpenSon Stack"
+echo "==============================================="
+echo "Choose an action:"
+echo "  1) Install/Update OpenSon stack"
+echo "  2) Uninstall OpenSon stack"
+echo
+read -p "Enter your choice (1 for install, 2 for uninstall): " CHOICE
+
+case "$CHOICE" in
+    1)
+        echo "Proceeding with installation/update..."
+        ;;
+    2)
+        uninstall_openson
+        ;;
+    *)
+        echo "Invalid choice. Exiting."
+        exit 1
+        ;;
+esac
+
 # --- Configuration ---
-# Set the user and group IDs for containers to match the current user.
 PUID=$(id -u)
 PGID=$(id -g)
+# Note: /etc/timezone is standard on Debian/Ubuntu/Raspberry Pi OS
 TIMEZONE=$(cat /etc/timezone)
-
-# Define the root directory for all persistent data
 DATA_ROOT="/pi-data"
 COMPOSE_FILE="docker-compose.yml"
 NGINX_CONF_PATH="$DATA_ROOT/nginx/conf.d"
@@ -24,12 +84,11 @@ sudo apt upgrade -y
 
 # --- Step 2: Install Docker and Docker Compose ---
 echo "2. Installing Docker and Docker Compose (Official script)..."
-# The official convenience script is the recommended way to install Docker on Debian-based systems.
 curl -fsSL https://get.docker.com | sh
 
-# Add the current user to the docker group to run docker commands without sudo
-echo "Adding user '$USER' to the 'docker' group..."
-sudo usermod -aG docker $USER
+# Add the current user to the docker group (requires log out/in to take effect)
+echo "Adding user '$USER' to the 'docker' group (requires log out/in to take effect)..."
+sudo usermod -aG docker "$USER"
 
 # Install Docker Compose (as a plugin)
 echo "Installing Docker Compose plugin..."
@@ -45,10 +104,9 @@ mkdir -p "$DATA_ROOT/ntfy/data"
 mkdir -p "$DATA_ROOT/uptime-kuma/data"
 mkdir -p "$DATA_ROOT/portainer/data"
 mkdir -p "$DATA_ROOT/codeserver/config"
-mkdir -p "$DATA_ROOT/nginx/conf.d" # Directory for Nginx configuration
-mkdir -p "$DATA_ROOT/filebrowser/config" # Directory for File Browser config
-# Example for where media files would live (the user needs to put their files here)
-mkdir -p "$DATA_ROOT/media" 
+mkdir -p "$DATA_ROOT/nginx/conf.d"
+mkdir -p "$DATA_ROOT/filebrowser/config"
+mkdir -p "$DATA_ROOT/media"
 
 echo "Volume directories created."
 
@@ -62,9 +120,8 @@ server {
 
     # === REVERSE PROXY CONFIGURATION (Subpaths must be defined first) ===
     
-    # Portainer (Docker Management GUI) - /docker
+    # Portainer (Websocket required)
     location /docker/ {
-        # Strip the /docker prefix before sending to Portainer
         rewrite ^/docker/(.*)$ /\$1 break; 
         proxy_pass http://portainer:9000;
         proxy_http_version 1.1;
@@ -76,7 +133,7 @@ server {
         proxy_set_header Connection "Upgrade";
     }
 
-    # Ntfy (Push Notification Service) - /ntfy
+    # Ntfy
     location /ntfy/ {
         proxy_pass http://ntfy:80/;
         proxy_set_header Host \$host;
@@ -85,7 +142,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
     
-    # File Browser - /drive
+    # Filebrowser
     location /drive/ {
         proxy_pass http://filebrowser:8080/;
         proxy_set_header Host \$host;
@@ -94,44 +151,44 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # Code Server (VS Code in the Browser) - /code
+    # Code Server (Websocket required, LSIO image uses HTTP on 8080 when URL_BASE is set)
     location /code/ {
-        # The rewrite helps Code Server function correctly when not on the root path
         rewrite ^/code/(.*)$ /\$1 break;
-        proxy_pass https://codeserver:8443;
+        proxy_pass http://codeserver:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        # Required for WebSockets (terminal, etc.)
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "Upgrade";
-        
-        proxy_ssl_verify off; # Trust the self-signed certificate inside the container
     }
 
-    # Jellyfin (Media Server) - SITE-WIDE LOCATION (location /)
-    # If none of the above paths match, the request goes to Jellyfin.
-    location / {
+    # Jellyfin (Moved to subpath /jellyfin/)
+    location /jellyfin/ {
+        rewrite ^/jellyfin/(.*)$ /\$1 break;
         proxy_pass http://jellyfin:8096;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        # Jellyfin WebSockets support
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection \$http_connection;
-        
-        # This is a general rule and should be after specific paths
-        try_files \$uri \$uri/ =404;
     }
 
-    # Uptime Kuma (Monitoring dashboard) is still direct-access on port 3001.
-
+    # Uptime Kuma (Now the default root service)
+    location / {
+        proxy_pass http://uptime-kuma:3001;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_redirect off; # Important for Uptime Kuma at root
+    }
 }
 EOF
 )
@@ -139,26 +196,22 @@ EOF
 echo "$NGINX_CONF_CONTENT" > "$NGINX_CONF_PATH/default.conf"
 echo "Nginx configuration file written to $NGINX_CONF_PATH/default.conf"
 
-
 # --- Step 5: Create docker-compose.yml ---
 echo "5. Generating $COMPOSE_FILE with new services..."
 
-cat <<EOF > $COMPOSE_FILE
+cat <<EOF > "$COMPOSE_FILE"
 version: "3.8"
 
 services:
-  # Nginx Reverse Proxy (Handles all external traffic on port 80)
   nginx:
     container_name: nginx
     image: nginx:latest
     restart: unless-stopped
     volumes:
-      # Mount the generated configuration
       - $NGINX_CONF_PATH/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "80:80" # Primary HTTP access point
-      
-  # Portainer (Docker Management GUI)
+      - "80:80"
+
   portainer:
     container_name: portainer
     image: portainer/portainer-ce:latest
@@ -169,9 +222,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - $DATA_ROOT/portainer/data:/data
-    # No external port exposed, accessed via Nginx: http://<PiIP>/docker
 
-  # Jellyfin (Media Server)
   jellyfin:
     container_name: jellyfin
     image: jellyfin/jellyfin:latest
@@ -180,18 +231,12 @@ services:
       - PUID=$PUID
       - PGID=$PGID
       - TZ=$TIMEZONE
-      # Set the published URL to match the Nginx root proxy
-      - JELLYFIN_PublishedServerUrl=http://<YourPiIP> 
+      - JELLYFIN_PublishedServerUrl=http://<YourPiIP>/jellyfin 
     volumes:
       - $DATA_ROOT/jellyfin/config:/config
       - $DATA_ROOT/jellyfin/cache:/cache
-      # IMPORTANT: Map your actual media folders here
       - $DATA_ROOT/media:/data/media:rw
-      # Uncomment for hardware transcoding (Pi 4 only)
-      # - /dev/dri:/dev/dri
-    # Ports are mapped internally only for networking with Nginx, not externally
 
-  # File Browser (Simple Web File Browser)
   filebrowser:
     container_name: filebrowser
     image: filebrowser/filebrowser:latest
@@ -200,13 +245,11 @@ services:
       - PUID=$PUID
       - PGID=$PGID
       - TZ=$TIMEZONE
-      - FB_BASEURL=/drive # Required for path-based proxying
+      - FB_BASEURL=/drive
     volumes:
       - $DATA_ROOT/filebrowser/config:/config
-      - $DATA_ROOT/media:/srv # Maps to your files
-    # No external port exposed, accessed via Nginx: http://<PiIP>/drive
+      - $DATA_ROOT/media:/srv
 
-  # Ntfy (Self-hosted push notification service)
   ntfy:
     container_name: ntfy
     image: binwiederda/ntfy:latest
@@ -217,9 +260,7 @@ services:
       - TZ=$TIMEZONE
     volumes:
       - $DATA_ROOT/ntfy/data:/var/cache/ntfy
-    # No external port exposed, accessed via Nginx: http://<PiIP>/ntfy
-      
-  # Uptime Kuma (Monitoring dashboard)
+
   uptime-kuma:
     container_name: uptime-kuma
     image: louislam/uptime-kuma:latest
@@ -230,10 +271,8 @@ services:
       - TZ=$TIMEZONE
     volumes:
       - $DATA_ROOT/uptime-kuma/data:/app/data
-    ports:
-      - "3001:3001" # Direct port access kept for simplicity
-      
-  # Code Server (VS Code in the Browser)
+    # Removed external port mapping, proxied via Nginx
+
   codeserver:
     container_name: codeserver
     image: linuxserver/codeserver:latest
@@ -242,51 +281,41 @@ services:
       - PUID=$PUID
       - PGID=$PGID
       - TZ=$TIMEZONE
-      - PASSWORD=yourstrongpassword # <<< CHANGE THIS!
-      - URL_BASE=/code # Required for path-based proxying
+      - PASSWORD=yourstrongpassword # <-- REMINDER: CHANGE THIS!
+      - URL_BASE=/code
+      - PORT=8080 
     volumes:
       - $DATA_ROOT/codeserver/config:/config
-      # Mount the Pi's file system for coding:
       - /home/$USER:/home/coder/project
-    # No external port exposed, accessed via Nginx: http://<PiIP>/code
-      
 EOF
 
 echo "$COMPOSE_FILE generated successfully."
 
-# --- Step 6: Start Services ---
-echo "6. Bringing up all services with Docker Compose..."
-
-# Restart the daemon and compose to pick up Nginx and the new config
-sudo systemctl daemon-reload
-docker compose up -d
+# --- Step 6: Start Services (using sudo for immediate success) ---
+echo "6. Bringing up all services with Docker Compose (using sudo to ensure permissions)..."
+# Using sudo to ensure immediate success before the user logs out/in for docker group permission
+sudo docker compose up -d
 
 if [ $? -eq 0 ]; then
     echo -e "\n--- Deployment Complete! ---"
     echo "All services are running in the background, proxied by Nginx."
-    echo "REMINDER: If this is the first run, you MUST log out and log back in for 'docker' group permissions to take effect."
+    echo "REMINDER: If this is the first run, you MUST **log out and log back in** for 'docker' group permissions to take effect (allowing you to run 'docker' commands without 'sudo')."
 else
     echo -e "\n!!! Deployment Failed !!!"
     echo "Docker Compose failed to start the containers."
-    echo "If this is the first run, please log out and back in, then run: docker compose up -d"
+    echo "Please check the logs with: sudo docker compose logs"
 fi
 
 # --- Step 7: Access Information ---
 echo -e "\n--- Access Information ---"
 PI_IP=$(hostname -I | awk '{print $1}')
-echo "Your Pi's IP Address is likely: $PI_IP"
+echo "Your Pi's IP Address is likely: **$PI_IP**"
 echo ""
-echo "Jellyfin is now your site-wide service on port 80:"
-echo "Jellyfin (Media Server):       http://$PI_IP/"
-echo ""
-echo "Other services are accessed via subpaths:"
+echo "Uptime Kuma (Dashboard):       http://$PI_IP/"
+echo "Jellyfin (Media Server):       http://$PI_IP/jellyfin"
 echo "Portainer (Docker Management): http://$PI_IP/docker"
 echo "File Browser (Files):          http://$PI_IP/drive"
 echo "Ntfy (Push Notifications):     http://$PI_IP/ntfy"
-echo "Code Server (VS Code):         http://$PI_IP/code (Login: user, Password: yourstrongpassword - CHANGE IT!)"
-echo ""
-echo "Uptime Kuma (Monitoring) is still direct-access for simplicity:"
-echo "Uptime Kuma:                   http://$PI_IP:3001"
-echo ""
-echo "Data Directory: $DATA_ROOT"
+echo "Code Server (VS Code):         http://$PI_IP/code **(Login: user, Password: yourstrongpassword - CHANGE IT!)**"
+echo "Data Directory: **$DATA_ROOT**"
 echo "-------------------------------------"
