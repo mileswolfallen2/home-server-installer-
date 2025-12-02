@@ -140,10 +140,22 @@ chmod +x install.sh       # Make the installer executable
 
 ## Uninstallation
 
-To remove:
-- Run `docker compose down`
-- Optionally delete `/pi-data` and config files manually
+To uninstall the OpenSon stack and remove all related Docker services/data:
 
+1. Run the installer script:
+   bash install.sh
+
+2. When prompted, type 2 to select the uninstall option.
+
+3. Confirm when asked to proceed.
+
+This will:
+- Stop and remove all OpenSon-related Docker containers, volumes, and configuration files.
+- Remove the /pi-data directory containing persistent data.
+- Uninstall Docker and Docker Compose from your system.
+- Remove your user from the docker group.
+
+Note: This process will remove all data and configuration related to the OpenSon stack. If you installed other Docker containers on your own, you may need to clean these up separately.
 ---
 
 ## License
