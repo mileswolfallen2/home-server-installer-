@@ -14,13 +14,15 @@ services:
   romm:
     image: rommapp/romm:latest
     container_name: romm
+    environment:
+      ROMM_DB_TYPE: sqlite
     ports:
       - "5000:5000"
     volumes:
-      - ./romm-data:/data
+      - ./romm-data:/romm
     restart: unless-stopped
 
-  dashboard:
+  heimdall:
     image: lscr.io/linuxserver/heimdall:latest
     container_name: heimdall
     ports:
@@ -29,7 +31,7 @@ services:
       - ./dashboard-config:/config
     restart: unless-stopped
 
-  music:
+  navidrome:
     image: deluan/navidrome:latest
     container_name: navidrome
     ports:
@@ -37,8 +39,6 @@ services:
     volumes:
       - ./music-data:/music
       - ./navidrome-data:/data
-    environment:
-      ND_SCANINTERVAL: 1h
     restart: unless-stopped
 
   filebrowser:
