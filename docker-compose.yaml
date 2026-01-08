@@ -1,66 +1,64 @@
-version: "3.9"
-
 services:
   minecraft:
-    image: itzg/minecraft-server:latest
+    image: itzg/minecraft-server
     container_name: mc-server
     environment:
       EULA: "TRUE"
       MEMORY: "1G"
     ports:
       - "25565:25565"
-    restart: unless-stopped
     volumes:
       - ./minecraft-data:/data
+    restart: unless-stopped
 
   romm:
     image: rommapp/romm:latest
-    container_name: romm-server
+    container_name: romm
     ports:
       - "5000:5000"
-    restart: unless-stopped
     volumes:
       - ./romm-data:/data
+    restart: unless-stopped
 
   dashboard:
-    image: linuxserver/heimdall
-    container_name: dashboard
+    image: lscr.io/linuxserver/heimdall:latest
+    container_name: heimdall
     ports:
       - "8080:80"
-    restart: unless-stopped
     volumes:
       - ./dashboard-config:/config
+    restart: unless-stopped
 
   music:
-    image: navjeorn/music:latest   # Replace with actual Navjeorn image
-    container_name: music
+    image: deluan/navidrome:latest
+    container_name: navidrome
     ports:
-      - "5500:5500"
-    restart: unless-stopped
+      - "4533:4533"
     volumes:
       - ./music-data:/music
+      - ./navidrome-data:/data
+    environment:
+      ND_SCANINTERVAL: 1h
+    restart: unless-stopped
 
   filebrowser:
-    image: filebrowser/filebrowser
+    image: filebrowser/filebrowser:latest
     container_name: filebrowser
     ports:
       - "8081:80"
-    restart: unless-stopped
     volumes:
       - ./files:/srv
       - ./filebrowser/filebrowser.db:/database.db
-      - ./filebrowser/settings.json:/config/settings.json
+    restart: unless-stopped
 
-  candy-proxy:
-    image: candycane/reverse-proxy:latest   # Replace with actual Candy image
-    container_name: candy-proxy
+  caddy:
+    image: caddy:latest
+    container_name: caddy
     ports:
       - "80:80"
       - "443:443"
-    restart: unless-stopped
     volumes:
-      - ./candy-config:/config
-
-networks:
-  default:
-    driver: bridge
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    restart: unless-stopped
