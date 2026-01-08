@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:latest
+    container_name: mc-server
+    environment:
+      EULA: "TRUE"
+      MEMORY: "1G"
+    ports:
+      - "25565:25565"
+    restart: unless-stopped
+    volumes:
+      - ./minecraft-data:/data
+
+  romm:
+    image: rommapp/romm:latest
+    container_name: romm-server
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    volumes:
+      - ./romm-data:/data
+
+  dashboard:
+    image: linuxserver/heimdall
+    container_name: dashboard
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    volumes:
+      - ./dashboard-config:/config
+
+  music:
+    image: navjeorn/music:latest   # Replace with actual Navjeorn image
+    container_name: music
+    ports:
+      - "5500:5500"
+    restart: unless-stopped
+    volumes:
+      - ./music-data:/music
+
+  filebrowser:
+    image: filebrowser/filebrowser
+    container_name: filebrowser
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    volumes:
+      - ./files:/srv
+      - ./filebrowser/filebrowser.db:/database.db
+      - ./filebrowser/settings.json:/config/settings.json
+
+  candy-proxy:
+    image: candycane/reverse-proxy:latest   # Replace with actual Candy image
+    container_name: candy-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    volumes:
+      - ./candy-config:/config
+
+networks:
+  default:
+    driver: bridge
