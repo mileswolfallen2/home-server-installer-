@@ -1,6 +1,21 @@
 :80 {
-  reverse_proxy /romm* romm:5000
-  reverse_proxy /files* filebrowser:80
-  reverse_proxy /music* navidrome:4533
-  reverse_proxy /dashboard* heimdall:80
+
+  route / {
+    reverse_proxy heimdall:80
+  }
+
+  route /romm* {
+    uri strip_prefix /romm
+    reverse_proxy romm:5000
+  }
+
+  route /music* {
+    uri strip_prefix /music
+    reverse_proxy navidrome:4533
+  }
+
+  route /files* {
+    uri strip_prefix /files
+    reverse_proxy filebrowser:80
+  }
 }
